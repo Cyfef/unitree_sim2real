@@ -1,0 +1,34 @@
+# Local Python and C++ builds
+.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/build/
+**/build_*/
+*.pyc
+*.log
+
+# Third-party binary/runtime bundle, distributed separately from Git
+rl_lab_controller/cpp_prefix/
+rl_lab_controller/cyclonedds/
+rl_lab_controller/thirdparty/
+rl_lab_controller/python_sdk/
+models/meshes/
+
+# Large task assets, distributed in the asset bundle
+supermimic/assets/motions/*.csv
+supermimic/assets/policies/*/policy.onnx
+*.pt
+*.pth
+*.ckpt
+
+# Generated candidates, traces, tests, and archives
+supermimic/sessions/
+**/results/
+**/runs/
+**/simulation_synced/
+**/simulation_stress/
+*.tar
+*.tar.gz
+*.tgz
+*.onnx
+rl_lab_controller/g1_29dof_synced/config/policy/
