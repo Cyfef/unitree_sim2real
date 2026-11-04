@@ -1,6 +1,6 @@
 # Environment setup
 
-Run all commands from this repository root. This workspace targets Ubuntu 24.04 on x86_64 with Python 3.12, CMake, a C++17 compiler, `ip`, `unshare`, and `sudo`. The bundled C++ dependencies and Python SDK source are supplied by the separate asset bundle. Python dependencies are pinned in `supermimic/requirements.txt`.
+Run all commands from this repository root. This workspace targets Ubuntu 24.04 on x86_64 with Python 3.12, CMake >= 3.24, a C++17 compiler, `ip`, `unshare`, and `sudo`. The bundled C++ dependencies and Python SDK source are supplied by the separate asset bundle. Python dependencies are pinned in `supermimic/requirements.txt`.
 
 1. Install the large asset bundle with `bash scripts/install_asset_bundle.sh ./unitree_sim2real-assets.tar.gz`. The asset check verifies model meshes, both policy ONNX files, the motion CSVs, and core SDK files.
 2. Run `bash scripts/setup.sh`. This creates or updates `.venv`, installs Python packages, and builds `rl_lab_controller/g1_29dof_synced/build/g1_ctrl` from the code in this checkout.

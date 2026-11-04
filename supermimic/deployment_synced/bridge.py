@@ -182,8 +182,8 @@ def main():
     model = load_model(args.model.resolve(), args.hands, False, initial, args.backpack_mass)
     if args.mass_scale != 1 or args.command_delay or args.wrist_torque_scale != 1 or args.ankle_breakaway or args.ankle_friction or args.backward_pull_force or args.suspended:
         parser.error("baseline forbids stress/model overrides")
-    baseline=mujoco.MjModel.from_xml_path(str(ROOT/'simulation_old_model_v1/model/g1/scene_29dof.xml'))
     if args.hands and args.sim_profile == 'baseline':
+        baseline=mujoco.MjModel.from_xml_path(str(ROOT.parent/'models/g1_29dof.xml'))
         # Model-only comparison: keep body drive losses and solver options frozen.
         for field in dir(baseline.opt):
             if field.startswith('_'):continue
@@ -232,7 +232,8 @@ def main():
         if len(matches) != 1:
             raise RuntimeError(f"expected one actuator for {name}, got {len(matches)}")
         actuators.append(int(matches[0]))
-    meta=json.loads((ROOT/'assets/policy/policy_meta.json').read_text())
+    meta_path=Path(yaml.safe_load(args.config.read_text())['FSM']['Velocity']['meta_file'])
+    meta=json.loads(meta_path.read_text())
     effort=4*np.asarray(meta['kp'])*np.asarray(meta['action_scale'])
     # An inactive MuJoCo ctrlrange is commonly [0,0], NOT a zero torque budget.
     limited=model.actuator_ctrllimited[actuators].astype(bool)

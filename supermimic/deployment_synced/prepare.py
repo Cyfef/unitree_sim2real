@@ -37,6 +37,9 @@ def main():
                                  orientation_trace=str(out / 'real_logs/orientation_trace.csv'))
     cfg['Safety'].update(reference=str(out / 'reference.json'), trace_path=str(out / 'real_logs/safety_trace.csv'))
     prep = json.loads((out / 'preparation.json').read_text())
+    if json.loads(a.reference.read_text()).get('synthetic_simulation_only'):
+        cfg['FSM']['Velocity']['simulation_only'] = True
+        prep['simulation_only'] = True
     prep.update(policy=a.policy, deployment_profile=PROFILE, controller='g1_29dof_synced', status='candidate_not_validated')
     (out / 'candidate.json').write_text(json.dumps(cfg, indent=2) + '\n')
     (out / 'preparation.json').write_text(json.dumps(prep, indent=2) + '\n')

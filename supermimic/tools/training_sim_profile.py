@@ -31,7 +31,7 @@ def load_training_model(path):
     compiler=root.find('compiler')
     compiler.set('meshdir',str((path.parent/compiler.get('meshdir','.')).resolve()))
     ET.SubElement(root.find('worldbody'),'geom',name='floor',type='plane',size='0 0 .05',friction='1 .005 .0001',contype='0',conaffinity='1')
-    meta=json.loads((ROOT/'assets/policy/policy_meta.json').read_text())
+    meta=json.loads((ROOT/'assets/policies/baseline/policy_meta.json').read_text())
     names=meta['joint_names']; arm=np.asarray(meta['kp'])/(10*2*3.1415926535)**2
     joints={j.get('name'):j for j in root.iter('joint')}
     if root.find('actuator') is not None:raise ValueError('expected unactuated training source MJCF')
@@ -49,7 +49,7 @@ def load_training_model(path):
 
 def grounded_height(model, reference):
     d=mujoco.MjData(model);d.qpos[:3]=0;d.qpos[3:7]=reference['pelvis_quaternion']
-    meta=json.loads((ROOT/'assets/policy/policy_meta.json').read_text())
+    meta=json.loads((ROOT/'assets/policies/baseline/policy_meta.json').read_text())
     for name,q in zip(meta['joint_names'],reference['q']):d.qpos[model.jnt_qposadr[model.joint(name).id]]=q
     mujoco.mj_forward(model,d)
     bottoms=[]
@@ -70,7 +70,7 @@ def grounded_height(model, reference):
 
 def apply_training_parameters(model):
     """Keep hardware geometry/mass/finger constraints; align 29 body drives."""
-    meta=json.loads((ROOT/'assets/policy/policy_meta.json').read_text())
+    meta=json.loads((ROOT/'assets/policies/baseline/policy_meta.json').read_text())
     for name,kp,scale in zip(meta['joint_names'],meta['kp'],meta['action_scale']):
         j=model.joint(name).id;v=model.jnt_dofadr[j]
         model.dof_armature[v]=kp/(10*2*3.1415926535)**2
