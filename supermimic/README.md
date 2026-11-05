@@ -44,7 +44,6 @@ All generated SuperMimic data is under `outputs/` and is excluded from Git:
 
 - `outputs/simulation/<policy>/batches/<name>/` contains one motion batch: results and manifests at the batch root, prepared clips in `candidates/`, per-clip simulation traces in `runs/`, and process logs in `logs/`. Single-clip runs go under `<policy>/manual/<name>/`.
 - `outputs/deployment/sessions/<session>/` contains one onsite preparation and run: `logs/` for preparation and validation commands, `candidate/` for bound assets and isolated validation results, and `candidate/real_logs/` for actual robot telemetry and controller traces.
-- `outputs/deployment/legacy_sessions/` preserves earlier offline records moved from the old `sessions/` location. Their saved absolute paths and validation hashes are stale; create a new candidate for any future deployment.
 
 ## Ownership
 
