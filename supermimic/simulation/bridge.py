@@ -57,7 +57,7 @@ def main():
     parser.add_argument("--mass-scale", type=float, default=1.)
     parser.add_argument("--early-policy", action="store_true", help="also press policy before the stand trajectory finishes")
     parser.add_argument("--support-delay", type=float, default=0., help="hold suspension after policy entry, seconds")
-    parser.add_argument("--policy-delay", type=float, default=0., help="extra fixed-stand time after feet contact")
+    parser.add_argument("--policy-delay", type=float, default=0., help="extra fixed-stand time; counted from readiness in standby flow")
     parser.add_argument("--preload-support", type=float, default=1.,
                         help="fraction of virtual support retained before policy entry; fades over 5 seconds after feet contact")
     parser.add_argument("--release-duration", type=float, default=4., help="seconds to fade suspension force")
@@ -114,6 +114,8 @@ def main():
         parser.error("suspended tests need --hands, --initial-pose and --config")
     if args.policy_standby_flow and (args.suspended or not args.expect_policy_window_stop):
         parser.error("standby flow requires grounded window validation")
+    if args.policy_standby_flow and args.preload_support != 1:
+        parser.error("standby flow retains full virtual support until policy entry")
     if args.expect_policy_window_stop and not args.config:
         parser.error("SuperMimic window check requires --config")
     if {name for _, name in socket.if_nameindex()} != {"lo"}:
@@ -245,8 +247,54 @@ def main():
                 duration=policy_at+window+(9.5 if args.policy_standby_flow else 2.0)
             else:
                 duration=args.stand_time+7.5 if args.suspended else forward_at+args.forward_duration+args.post_forward_hold
-            for step in range(int(duration/bridge_dt)):
+            # In the SuperMimic standby flow, the controller decides when
+            # FixStand is ready. The nominal time only bounds the wait.
+            if args.policy_standby_flow:
+                stand_ready=False
+                ready_since=None
+                policy_request_start=None
+                policy_entered_at=None
+                standby_ready=False
+                motion_request_start=None
+                release_at=forward_at=math.inf
+                loop_duration=policy_at+60+window+9.5
+            else:
+                loop_duration=duration
+            for step in range(int(loop_duration/bridge_dt)):
                 t = step * bridge_dt
+                if args.policy_standby_flow and step % 10 == 0:
+                    current_log=(args.output/"controller.log").read_text()
+                    ready_at=current_log.rfind("FixStand reached:")
+                    lost_at=max(current_log.rfind("到位条件已失效"),
+                                current_log.rfind("FixStand policy entry blocked:"))
+                    observed_ready=ready_at>=0 and ready_at>lost_at
+                    if observed_ready and not stand_ready:
+                        ready_since=t
+                    elif not observed_ready:
+                        ready_since=None
+                    stand_ready=observed_ready
+                    if policy_entered_at is None and "Change state from FixStand to Velocity" in current_log:
+                        policy_entered_at=t
+                        release_at=t+args.support_delay+args.release_duration
+                        forward_at=release_at+args.zero_time
+                    standby_ready="SuperMimic: STANDBY_PRE ready;" in current_log
+                    if "Reference orientation protection:" in current_log and "Change state from Velocity to Passive" in current_log:
+                        raise RuntimeError("reference gravity distance >0.8: FSM switched to Passive")
+                if args.policy_standby_flow:
+                    if policy_entered_at is None and t>policy_at+30:
+                        raise RuntimeError("controller did not enter policy within 30 s of nominal stand time")
+                    if policy_entered_at is not None and motion_request_start is None and t>policy_entered_at+30:
+                        raise RuntimeError("policy standby did not become ready within 30 s")
+                    if policy_entered_at is None:
+                        if not stand_ready:
+                            policy_request_start=None
+                        elif policy_request_start is None and t>=ready_since+args.policy_delay:
+                            policy_request_start=t
+                        elif policy_request_start is not None and t>=policy_request_start+1:
+                            policy_request_start=t  # fresh rising edge if the first request was missed
+                    elif standby_ready and motion_request_start is None and t>=policy_entered_at+5.5:
+                        motion_request_start=t
+                        duration=motion_request_start+.5+window+3.5
                 with lock:
                     command, received = latest
                     if args.command_delay:
@@ -270,8 +318,9 @@ def main():
                         model.actuator_biasprm[actuator,1:3]=0
                 # Virtual suspension is used only for the documented startup.
                 support = 0. if args.suspended else min(1., max(0., (release_at-t)/args.release_duration))
-                preload_progress=1. if args.grounded_start else min(1.,max(0.,(t-feet_contact_at)/5.))
-                support*=1-(1-args.preload_support)*preload_progress
+                if not args.policy_standby_flow:
+                    preload_progress=1. if args.grounded_start else min(1.,max(0.,(t-feet_contact_at)/5.))
+                    support*=1-(1-args.preload_support)*preload_progress
                 if not args.suspended: support=max(support,args.retained_support)
                 data.xfrc_applied[:] = 0
                 if not args.suspended:
@@ -325,10 +374,10 @@ def main():
                     keys = (1<<5) | ((1<<12) if t>2.5 else 0)
                 elif args.early_policy and 7<t<8:
                     keys = (1<<0) | ((1<<10) if t>7.5 else 0)
-                elif args.policy_standby_flow and policy_at-.5<t<policy_at+.5:
-                    keys = (1<<0) | ((1<<8) if t>policy_at else 0)  # R1+A: static policy standby
-                elif args.policy_standby_flow and policy_at+5.5<t<policy_at+6.5:
-                    keys = (1<<0) | ((1<<10) if t>policy_at+6 else 0)  # R1+X: play
+                elif args.policy_standby_flow and policy_entered_at is None and policy_request_start is not None and t<policy_request_start+1:
+                    keys = (1<<0) | ((1<<8) if t>=policy_request_start+.5 else 0)  # R1+A after FixStand readiness
+                elif args.policy_standby_flow and motion_request_start is not None and t<motion_request_start+1:
+                    keys = (1<<0) | ((1<<10) if t>=motion_request_start+.5 else 0)  # R1+X after standby readiness
                 elif not args.policy_standby_flow and (not args.suspended or args.expect_policy_window_stop) and policy_at-.5<t<policy_at+.5:
                     keys = (1<<0) | ((1<<10) if t>policy_at else 0)
                 state.wireless_remote[0:2] = [0xfe, 0xef]
@@ -368,10 +417,12 @@ def main():
                     raise RuntimeError(f"controller exited: {process.poll()}, {invalid}")
                 if not np.all(np.isfinite(data.qpos)) or not np.all(np.isfinite(data.qvel)):
                     raise RuntimeError(f"nonfinite simulated state at {t:.3f}s")
-                if step % 10 == 0:
+                if step % 10 == 0 and not args.policy_standby_flow:
                     current_log=(args.output/"controller.log").read_text()
                     if "Reference orientation protection:" in current_log and "Change state from Velocity to Passive" in current_log:
                         raise RuntimeError("reference gravity distance >0.8: FSM switched to Passive")
+                if args.policy_standby_flow and motion_request_start is not None and t>=duration-bridge_dt:
+                    break
                 delay = start + (step+1)*bridge_dt - time.monotonic()
                 max_wall_lag=max(max_wall_lag,-delay)
                 if t>policy_at:
