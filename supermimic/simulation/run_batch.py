@@ -4,14 +4,14 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];BUNDLE=ROOT.parent;BASE=Path(__file__).resolve().parent
 sys.path.insert(0,str(BUNDLE/'scripts'))
 from runtime_env import shared_runtime_env
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--name',required=True);p.add_argument('--workers',type=int,default=8);p.add_argument('--policy',choices=('baseline','backpack'),default='backpack');a=p.parse_args()
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--name',required=True);p.add_argument('--workers',type=int,default=8);p.add_argument('--policy',choices=('baseline','backpack'),default='backpack');p.add_argument('--stand-gains',choices=('original','policy'),default='original');a=p.parse_args()
 if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*',a.name) or not 1<=a.workers<=8:p.error('invalid batch name or concurrency')
 B=ROOT/'outputs/simulation'/a.policy/'batches'/a.name;B.mkdir(parents=True,exist_ok=False)
 LOG_DIR=B/'logs';LOG_DIR.mkdir()
 (LOG_DIR/'launch.json').write_text(json.dumps({
  'pid':os.getpid(),'started':datetime.datetime.now().isoformat(),'batch':str(B),
  'workers':a.workers,'physical_robot_run':False,'model':'hands_backpack',
- 'physics_dt':.005,'policy':a.policy},indent=2)+'\n')
+ 'physics_dt':.005,'policy':a.policy,'stand_gains':a.stand_gains},indent=2)+'\n')
 logger=logging.getLogger('supermimic_simulation_batch');logger.setLevel(logging.INFO);logger.propagate=False
 for handler in [logging.FileHandler(LOG_DIR/'batch.log',mode='x'),logging.StreamHandler(sys.stdout)]:
  handler.setFormatter(logging.Formatter('%(message)s'));logger.addHandler(handler)
@@ -22,7 +22,7 @@ paths += sorted((BUNDLE/'models/meshes').glob('*.STL'))
 paths += sorted((ROOT/'assets/motions').glob('*.csv'))
 sha=lambda x:hashlib.sha256(x.read_bytes()).hexdigest()
 hashes={str(x.relative_to(BUNDLE)):sha(x) for x in paths}
-manifest=dict(name=a.name,policy=a.policy,clips=clips,workers=a.workers,started=datetime.datetime.now().isoformat(),physical_robot_test=False,model_variant='hands_backpack',imu_convention='deployment',stand_gains='policy',physics_dt=.005,control_dt=.02,start_frame=0,full_clip=True,sha256=hashes)
+manifest=dict(name=a.name,policy=a.policy,clips=clips,workers=a.workers,started=datetime.datetime.now().isoformat(),physical_robot_test=False,model_variant='hands_backpack',imu_convention='deployment',stand_gains=a.stand_gains,physics_dt=.005,control_dt=.02,start_frame=0,full_clip=True,sha256=hashes)
 (B/'manifest.json').write_text(json.dumps(manifest,indent=2));(B/'driver_snapshot.py').write_text(Path(__file__).read_text())
 results={c:dict(status='queued') for c in clips};lock=threading.Lock()
 env=shared_runtime_env()
@@ -49,7 +49,7 @@ def evaluate(c):
   run=B/'runs'/c
   update(c,status='running',motion_seconds=prep['max_seconds'],frames=frames,run=str(run.relative_to(ROOT)))
   with (LOG_DIR/(c+'_launch.log')).open('x') as f:
-   q=subprocess.run([sys.executable,str(BASE/'run.py'),'--source-session',str(out),'--name',c,'--batch',a.name,'--policy',a.policy,'--stand-gains','policy','--imu-convention','deployment'],cwd=ROOT,env=env,stdout=f,stderr=subprocess.STDOUT)
+   q=subprocess.run([sys.executable,str(BASE/'run.py'),'--source-session',str(out),'--name',c,'--batch',a.name,'--policy',a.policy,'--stand-gains',a.stand_gains,'--imu-convention','deployment'],cwd=ROOT,env=env,stdout=f,stderr=subprocess.STDOUT)
   summary=run/'simulation/summary.json'
   if not summary.exists():
    update(c,status='infrastructure_error',reason=(LOG_DIR/(c+'_launch.log')).read_text()[-2000:],finished=datetime.datetime.now().isoformat());return

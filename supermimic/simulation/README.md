@@ -12,6 +12,6 @@ python3 supermimic/simulation/check_inputs.py --policy backpack
 .venv/bin/python supermimic/simulation/run_batch.py --policy backpack --name batch_YYYYMMDD --workers 8
 ```
 
-Choose `--policy baseline` to run the other policy. `run_batch.py` evaluates all 40 bundled motion clips from their first frame and writes one result per clip. The last command runs the simulation; the first two only build and inspect inputs. Use a new batch name for each attempt under a policy.
+Choose `--policy baseline` to run the other policy. FixStand uses the recovery-template `kp` and `kd` by default, matching the onsite deployment gain configuration; `--stand-gains policy` reproduces the earlier simulation combination of template `kp` and policy `kd`. `run_batch.py` evaluates all 40 bundled motion clips from their first frame and writes one result per clip. The last command runs the simulation; the first two only build and inspect inputs. Use a new batch name for each attempt under a policy.
 
 Results are stored under `../outputs/simulation/<policy>/batches/<name>/`: `manifest.json`, `progress.json`, `results.json`, `candidates/<clip>/`, `runs/<clip>/`, and `logs/`. Individual runs started with `run.py` go under `../outputs/simulation/<policy>/manual/<name>/`. Generated data is excluded from Git.

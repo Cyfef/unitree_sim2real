@@ -10,7 +10,7 @@ Shared Python packages, SDK paths, model files, and setup scripts live at the wo
 
 ## Simulate SuperMimic
 
-The [simulation adapter](simulation/README.md) evaluates the 40 motion clips with either policy. It uses a fixed starting pose, 5 ms Euler physics, one physics step per DDS state, policy gains during stand, and a simulation-only controller and safety profile. Numerical settings are in `simulation/physics.json` and are applied by the shared `simulation_core/` module. See the simulation README for build, input-check, and batch-run commands.
+The [simulation adapter](simulation/README.md) evaluates the 40 motion clips with either policy. It uses a fixed starting pose, 5 ms Euler physics, one physics step per DDS state, the recovery-template gains during stand by default, and a simulation-only controller and safety profile. Numerical settings are in `simulation/physics.json` and are applied by the shared `simulation_core/` module. See the simulation README for build, input-check, and batch-run commands.
 
 ## Prepare and deploy onsite
 
