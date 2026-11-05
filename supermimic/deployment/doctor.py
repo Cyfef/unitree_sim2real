@@ -9,7 +9,11 @@ def main():
     p.add_argument('--network',default=os.environ.get('SUPERMIMIC_NETWORK','enp12s0'))
     p.add_argument('--require-link',action='store_true')
     a=p.parse_args()
-    sys.path[:0]=[str(ROOT),str(ROOT/'tools'),str(ROOT.parent/'rl_lab_controller/g1_29dof_deployment')]
+    sys.path[:0]=[str(ROOT),str(ROOT/'tools')]
+    from capture_reference import LAB
+    if not (LAB / 'policy_preflight.py').is_file():
+        raise FileNotFoundError(LAB / 'policy_preflight.py')
+    sys.path.insert(0,str(LAB))
     packages={}
     for name in ['numpy','yaml','mujoco','torch','contract','stand_plan','policy_preflight','policy_release','policy_record']:
         m=importlib.import_module(name);packages[name]=getattr(m,'__version__','import_ok')

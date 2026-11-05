@@ -41,7 +41,16 @@ echo 'Checking saved isolated simulation validation (these are not live robot re
   --network "$NETWORK" --reference "$SESSION/reference.json"
 mkdir -p "$SESSION/real_logs"
 recorder_pid=''
+terminal_settings=''
+if [[ -t 0 ]]; then
+  terminal_settings="$(stty -g)"
+fi
 cleanup() {
+  # The controller keyboard reader disables echo and canonical input. Restore
+  # the caller's terminal even if a signal bypasses C++ destructors.
+  if [[ -n "$terminal_settings" ]]; then
+    stty "$terminal_settings" 2>/dev/null || true
+  fi
   if [[ -n "$recorder_pid" ]] && kill -0 "$recorder_pid" 2>/dev/null; then
     sleep .7
     kill -TERM "$recorder_pid" 2>/dev/null || true
@@ -60,4 +69,4 @@ echo 'FixStand recovers nominal posture, waits for stability, then aligns to the
 echo 'After FixStand is ready: R1+A enters static policy standby; fresh R1+X starts motion when ready.'
 echo 'Motion ends in policy final-pose hold, not automatic disable. L2+B returns to damping; Ctrl+C shuts down.'
 "$UNITREE_SIM2REAL_ROOT/rl_lab_controller/g1_29dof_deployment/build/g1_ctrl" --network "$NETWORK" \
-  --config "$SESSION/candidate.json" 2>&1 | tee "$SESSION/real_logs/controller.log"
+  --config "$SESSION/candidate.json" 2>&1 | tee --ignore-interrupts "$SESSION/real_logs/controller.log"

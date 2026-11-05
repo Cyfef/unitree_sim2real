@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-LAB = Path(__file__).resolve().parent / "rl_lab_controller/g1_29dof"
+LAB = Path(__file__).resolve().parent.parent / "rl_lab_controller/g1_29dof_deployment"
 
 
 def main() -> None:
