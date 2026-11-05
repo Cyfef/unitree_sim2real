@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];BUNDLE=ROOT.parent;BASE=Path(__file__).resolve().parent
 sys.path.insert(0,str(BUNDLE/'scripts'))
 from runtime_env import shared_runtime_env
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--name',required=True);p.add_argument('--workers',type=int,default=8);p.add_argument('--policy',choices=('baseline','backpack'),default='backpack');p.add_argument('--stand-gains',choices=('original','policy'),default='original');a=p.parse_args()
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--name',required=True);p.add_argument('--workers',type=int,default=8);p.add_argument('--policy',choices=('baseline','backpack'),default='backpack');p.add_argument('--stand-gains',choices=('original','policy','official'),default='original');a=p.parse_args()
 if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*',a.name) or not 1<=a.workers<=8:p.error('invalid batch name or concurrency')
 B=ROOT/'outputs/simulation'/a.policy/'batches'/a.name;B.mkdir(parents=True,exist_ok=False)
 LOG_DIR=B/'logs';LOG_DIR.mkdir()
@@ -17,7 +17,7 @@ for handler in [logging.FileHandler(LOG_DIR/'batch.log',mode='x'),logging.Stream
  handler.setFormatter(logging.Formatter('%(message)s'));logger.addHandler(handler)
 clips=sorted(x.stem for x in (ROOT/'assets/motions').glob('*.csv'));assert len(clips)==40
 ref=BASE/'poses/standby.json'
-paths=[BASE/'run.py',BASE/'bridge.py',ROOT/'tools/prepare_clip.py',ROOT/'tools/stand_plan.py',ROOT/'contract.py',ROOT/'config/recovery_template.json',BASE/'model_tools.py',BASE/'physics.json',BUNDLE/'simulation_core/physics.py',BUNDLE/'scripts/runtime_env.py',ROOT/'tools/model.py',ROOT/'assets/policies'/a.policy/'policy.onnx',ROOT/'assets/policies'/a.policy/'policy_meta.json',BUNDLE/'rl_lab_controller/g1_29dof_deployment/build_simulation/g1_ctrl',BUNDLE/'models/g1_29dof_with_hand_rev_1_0.xml',ref]
+paths=[BASE/'run.py',BASE/'bridge.py',ROOT/'tools/prepare_clip.py',ROOT/'tools/stand_plan.py',ROOT/'contract.py',ROOT/'config/recovery_template.json',BASE/'model_tools.py',BASE/'physics.json',BASE/'official_fixstand_gains.json',BUNDLE/'simulation_core/physics.py',BUNDLE/'scripts/runtime_env.py',ROOT/'tools/model.py',ROOT/'assets/policies'/a.policy/'policy.onnx',ROOT/'assets/policies'/a.policy/'policy_meta.json',BUNDLE/'rl_lab_controller/g1_29dof_deployment/build_simulation/g1_ctrl',BUNDLE/'models/g1_29dof_with_hand_rev_1_0.xml',ref]
 paths += sorted((BUNDLE/'models/meshes').glob('*.STL'))
 paths += sorted((ROOT/'assets/motions').glob('*.csv'))
 sha=lambda x:hashlib.sha256(x.read_bytes()).hexdigest()

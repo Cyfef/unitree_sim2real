@@ -15,7 +15,7 @@ p.add_argument('--source-session',type=Path,required=True)
 p.add_argument('--name',required=True)
 p.add_argument('--batch')
 p.add_argument('--policy',choices=('baseline','backpack'))
-p.add_argument('--stand-gains',choices=['original','policy'],default='original')
+p.add_argument('--stand-gains',choices=['original','policy','official'],default='original')
 p.add_argument('--seconds',type=float)
 p.add_argument('--orientation-fault-at',type=float)
 p.add_argument('--imu-convention',choices=['previous_sdk','deployment'],default='deployment')
@@ -47,7 +47,11 @@ if a.seconds is not None:
 if a.stand_gains=='policy':
  meta=json.loads((policy_dir/'policy_meta.json').read_text())
  cfg['FSM']['FixStand']['kd']=meta['kd']
- # Only preparation gains vary; all software protection thresholds remain unchanged.
+elif a.stand_gains=='official':
+ gains=json.loads((BASE/'official_fixstand_gains.json').read_text())
+ if len(gains['kp'])!=29 or len(gains['kd'])!=29: p.error('invalid official FixStand gains')
+ cfg['FSM']['FixStand'].update(kp=gains['kp'],kd=gains['kd'])
+# Only preparation gains vary; all software protection thresholds remain unchanged.
 (out/'candidate.json').write_text(json.dumps(cfg,indent=2))
 model=BUNDLE/'models/g1_29dof_with_hand_rev_1_0.xml'
 ref=json.loads((out/'reference.json').read_text())
@@ -62,7 +66,7 @@ if a.orientation_fault_at is not None:
  if not math.isfinite(a.orientation_fault_at) or a.orientation_fault_at<=0:p.error('invalid orientation fault time')
  args+=['--orientation-fault-at',str(a.orientation_fault_at)]
 env=shared_runtime_env()
-manifest={'protection_profile':'reference_gravity_distance_0p8','physical_robot_test':False,'source_session':str(src),'stand_gains':a.stand_gains,'policy':policy,'model_variant':'hands_backpack','imu_convention':a.imu_convention,'motion_seconds':vel['max_seconds'],'argv':args,'sha256':{str(x.relative_to(BUNDLE)):hashlib.sha256(x.read_bytes()).hexdigest() for x in [bridge,controller,model,BUNDLE/'simulation_core/physics.py',ROOT/'tools/model.py',BASE/'physics.json',BUNDLE/'scripts/runtime_env.py',policy_dir/'policy.onnx',policy_dir/'policy_meta.json',out/'candidate.json',out/'motion.bin']}}
+manifest={'protection_profile':'reference_gravity_distance_0p8','physical_robot_test':False,'source_session':str(src),'stand_gains':a.stand_gains,'policy':policy,'model_variant':'hands_backpack','imu_convention':a.imu_convention,'motion_seconds':vel['max_seconds'],'argv':args,'sha256':{str(x.relative_to(BUNDLE)):hashlib.sha256(x.read_bytes()).hexdigest() for x in [bridge,controller,model,BUNDLE/'simulation_core/physics.py',ROOT/'tools/model.py',BASE/'physics.json',BASE/'official_fixstand_gains.json',BUNDLE/'scripts/runtime_env.py',policy_dir/'policy.onnx',policy_dir/'policy_meta.json',out/'candidate.json',out/'motion.bin']}}
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2))
 shutil.copy2(bridge,out/'bridge_snapshot.py')
 shutil.copy2(Path(__file__),out/'runner_snapshot.py')
