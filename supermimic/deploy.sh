@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-source "$ROOT/deployment_synced/env.sh"
+source "$ROOT/config/env.sh"
 usage() {
   cat <<'TXT'
 Usage:
@@ -17,7 +17,7 @@ TXT
 command="${1:-help}"
 if (($#)); then shift; fi
 case "$command" in
-  check) exec "$PYTHON_BIN" "$ROOT/deployment_synced/doctor.py" "$@" ;;
+  check) exec "$PYTHON_BIN" "$ROOT/deployment/doctor.py" "$@" ;;
   run) exec bash "$ROOT/launch.sh" "$@" ;;
   help|--help|-h) usage; exit 0 ;;
   prepare) ;;
@@ -55,17 +55,19 @@ motion=load_clip(Path(root)/'assets/motions'/f'{clip}.csv',10)
 i=round(start/.02);stop=i+math.ceil(duration/.02)+1
 if i>=motion.frames-1 or stop>motion.frames:raise SystemExit('Motion window runs past the end of the clip')
 PY
-"$PYTHON_BIN" "$ROOT/deployment_synced/doctor.py" --network "$NETWORK" --require-link
-mkdir -p "$ROOT/sessions"
-exec 9>"$ROOT/sessions/.launch.lock"
+"$PYTHON_BIN" "$ROOT/deployment/doctor.py" --network "$NETWORK" --require-link
+OUTPUT_ROOT="$ROOT/outputs/deployment"
+mkdir -p "$OUTPUT_ROOT/sessions"
+exec 9>"$OUTPUT_ROOT/.launch.lock"
 flock -n 9 || { echo 'Another deployment session is active.' >&2; exit 1; }
-SESSION="$(mktemp -d "$ROOT/sessions/onsite-unitree-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
+SESSION="$(mktemp -d "$OUTPUT_ROOT/sessions/onsite-unitree-$(date +%Y%m%d-%H%M%S)-XXXXXX")"
 trap 'echo "Stopped. Logs: $SESSION. Keep robot supported; inspect the error before retrying." >&2' ERR
+mkdir -p "$SESSION/logs"
 echo "Session: $SESSION"
 echo 'Releasing official control and disabling motors; full hoist support is required.'
-"$PYTHON_BIN" "$ROOT/rl_lab_controller/g1_29dof/policy_release.py" --network "$NETWORK" --supported-grounded --output "$SESSION/release.json" 2>&1 | tee "$SESSION/release.log"
-"$PYTHON_BIN" "$ROOT/capture_reference.py" --network "$NETWORK" --output "$SESSION/reference.json" 2>&1 | tee "$SESSION/capture.log"
-"$PYTHON_BIN" "$ROOT/deployment_synced/prepare.py" --policy "$POLICY" --clip "$CLIP" --start-seconds "$START" --max-seconds "$SECONDS_TO_PLAY" --reference "$SESSION/reference.json" --output-dir "$SESSION/candidate" 2>&1 | tee "$SESSION/prepare.log"
-"$PYTHON_BIN" "$ROOT/deployment_synced/verify.py" --session "$SESSION/candidate" 2>&1 | tee "$SESSION/verify.log"
+"$PYTHON_BIN" "$UNITREE_SIM2REAL_ROOT/rl_lab_controller/g1_29dof_deployment/policy_release.py" --network "$NETWORK" --supported-grounded --output "$SESSION/release.json" 2>&1 | tee "$SESSION/logs/release.log"
+"$PYTHON_BIN" "$ROOT/capture_reference.py" --network "$NETWORK" --output "$SESSION/reference.json" 2>&1 | tee "$SESSION/logs/capture.log"
+"$PYTHON_BIN" "$ROOT/deployment/prepare.py" --policy "$POLICY" --clip "$CLIP" --start-seconds "$START" --max-seconds "$SECONDS_TO_PLAY" --reference "$SESSION/reference.json" --output-dir "$SESSION/candidate" 2>&1 | tee "$SESSION/logs/prepare.log"
+"$PYTHON_BIN" "$ROOT/deployment/verify.py" --session "$SESSION/candidate" 2>&1 | tee "$SESSION/logs/verify.log"
 echo 'Prepared and verified. Policy has NOT been launched. Launch separately onsite:'
 printf 'bash %q run --session %q --network %q --supported-grounded --execute\n' "$ROOT/deploy.sh" "$SESSION/candidate" "$NETWORK"

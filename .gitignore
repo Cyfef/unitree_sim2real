@@ -22,7 +22,7 @@ supermimic/assets/policies/*/policy.onnx
 *.ckpt
 
 # Generated candidates, traces, tests, and archives
-supermimic/sessions/
+supermimic/outputs/
 **/results/
 **/runs/
 **/simulation_synced/

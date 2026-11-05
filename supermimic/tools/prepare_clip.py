@@ -1,4 +1,4 @@
-"""Prepare one bounded SuperMimic motion for the copied RL Lab controller.
+"""Prepare one bounded SuperMimic motion for the shared G1 controller.
 
 No DDS import, no robot command. This writes a candidate, not an approved launch.
 """
@@ -83,7 +83,7 @@ def main() -> None:
     p.add_argument("--suggest-starts", action="store_true")
     p.add_argument("--reference", type=Path, help="fresh disabled-pose capture")
     p.add_argument("--output-dir", type=Path)
-    p.add_argument("--model", type=Path, default=ROOT / "assets/model/g1_29dof_with_hand_rev_1_0.xml")
+    p.add_argument("--model", type=Path, default=ROOT.parent / "models/g1_29dof_with_hand_rev_1_0.xml")
     args = p.parse_args()
     motion = ROOT / "assets/motions" / (args.clip + ".csv")
     if not motion.is_file() or motion.stem != args.clip:
@@ -139,7 +139,7 @@ def main() -> None:
             for tensor in (clip.q[i], clip.R[i].reshape(-1), clip.goals[i]):
                 stream.write(tensor.numpy().astype("<f4", copy=False).tobytes())
 
-    template = json.loads((ROOT / "rl_lab_controller/g1_29dof/config/recovery_template.json").read_text())
+    template = json.loads((ROOT / "config/recovery_template.json").read_text())
     cfg = template
     qclear = qref.copy()
     qclear[16], qclear[23] = .45, -.45
@@ -173,7 +173,7 @@ def main() -> None:
         nominal_settle_timeout=5., nominal_hold_seconds=.3)
     cfg["FSM"]["FixStand"]["transitions"]["Velocity"] = "RB + A.on_pressed"
     cfg["FSM"]["_"]["Velocity"]["type"] = "SuperMimic"
-    controller_root = ROOT / "rl_lab_controller/g1_29dof"
+    controller_root = ROOT.parent / "rl_lab_controller/g1_29dof_deployment"
     def relative(path: Path) -> str:
         return os.path.relpath(path.resolve(), controller_root.resolve())
     cfg["FSM"]["Velocity"] = {

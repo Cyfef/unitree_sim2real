@@ -1,0 +1,5 @@
+# Shared workspace Python dependencies (Python 3.12).
+numpy==2.5.4
+mujoco==3.17.0
+PyYAML==6.0.3
+cyclonedds==0.10.5

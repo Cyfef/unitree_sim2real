@@ -14,8 +14,7 @@ def alignment_waypoints(model_path, reference_path, ref, nominal, target):
     pitch/elbows above the goal and approach the final shoulder angles downward.
     Stress margins are hypotheses tested by the verifier, not a calibration.
     """
-    sys.path.insert(0, str(ROOT / 'rl_lab_controller/g1_29dof'))
-    from sim2sim_check import load_model
+    from model import load_model
     from contract import JOINT_NAMES
     model=load_model(model_path.resolve(),str(reference_path),backpack_mass=1.9)
     data=mujoco.MjData(model)
@@ -73,8 +72,7 @@ def alignment_waypoints(model_path, reference_path, ref, nominal, target):
     return pts,report
 
 def plan_stand(model_path, reference_path, ref, waypoints, times, linear_segments=0):
-    sys.path.insert(0, str(ROOT / 'rl_lab_controller/g1_29dof'))
-    from sim2sim_check import load_model
+    from model import load_model
     from contract import JOINT_NAMES
     model = load_model(model_path.resolve(), str(reference_path), backpack_mass=1.9)
     data = mujoco.MjData(model)

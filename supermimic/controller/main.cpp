@@ -2,7 +2,6 @@
 #include "FSM/State_Passive.h"
 #include "FSM/State_FixStand.h"
 #include "FSM/State_RLBase.h"
-#include "State_Mimic.h"
 #include "State_SuperMimic.h"
 #include "G1Safety.h"
 #include <atomic>
@@ -47,7 +46,7 @@ int main(int argc, char** argv)
     spdlog::info("SuperMimic unified profile: loaded_posture_v5");
     // Full-length candidates must never open a physical network interface.
     bool simulation_only=param::config["FSM"]["Velocity"]["simulation_only"].as<bool>(false);
-#ifdef SUPERMIMIC_SIMULATION_JOINT_LIMITS
+#ifdef G1_SIMULATION_JOINT_LIMITS
     simulation_only=true;
     // Dedicated sibling build directory; preserve package-relative asset paths.
     param::proj_dir=param::bin_path.parent_path().parent_path();
