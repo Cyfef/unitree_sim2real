@@ -15,6 +15,7 @@ def main():
     p.add_argument('--start-seconds', type=float, default=0.)
     p.add_argument('--max-seconds', type=float, default=5.)
     p.add_argument('--full-clip-simulation', action='store_true')
+    p.add_argument('--full-motion', action='store_true', help='hardware full motion from zero; ignores start and max seconds')
     p.add_argument('--reference', type=__import__('pathlib').Path, required=True)
     p.add_argument('--output-dir', type=__import__('pathlib').Path, required=True)
     a = p.parse_args()
@@ -22,7 +23,9 @@ def main():
     cmd = [sys.executable, str(ROOT / 'tools/prepare_clip.py'), '--clip', a.clip,
            '--policy', a.policy, '--start-seconds', str(a.start_seconds), '--max-seconds', str(a.max_seconds),
            '--reference', str(a.reference.resolve()), '--output-dir', str(out)]
+    if a.full_clip_simulation and a.full_motion: p.error('Choose one full-motion mode')
     if a.full_clip_simulation: cmd.append('--full-clip-simulation')
+    if a.full_motion: cmd.append('--full-motion')
     env = shared_runtime_env()
     subprocess.run(cmd, check=True, env=env)
     cfg = json.loads((out / 'candidate.json').read_text())

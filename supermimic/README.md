@@ -29,6 +29,15 @@ bash deploy.sh prepare --policy backpack --clip walk1_subject2 \
   --start-seconds 0 --max-seconds 5 --network enp12s0 --supported-grounded
 ```
 
+For a complete clip, use `--full-motion` instead of a window:
+
+```bash
+bash deploy.sh prepare --policy backpack --clip walk1_subject2 \
+  --full-motion --network enp12s0 --supported-grounded
+```
+
+A window must request at least 5 seconds. If `--max-seconds` exceeds the clip time remaining after `--start-seconds`, preparation stops at the clip end. `--full-motion` plays from 0 seconds to the clip end and ignores both window options. The actual candidate duration is stored in `preparation.json` and validated before robot launch. Full clips are limited to 600 seconds by the controller.
+
 Choose `--policy baseline` for the earlier deployment weight or `--policy backpack` for checkpoint 132000. This selects the paired ONNX and metadata only; the model, controller, motor command path, safety gates and deployment validation settings stay the same. `prepare` refuses SSH and does not launch the policy. It prints a new `outputs/deployment/sessions/.../candidate` path and the run command after validation. Run that exact command onsite, for example:
 
 ```bash

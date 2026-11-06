@@ -80,6 +80,7 @@ def main() -> None:
     p.add_argument("--start-seconds", type=float, default=0.0)
     p.add_argument("--max-seconds", type=float, default=5.0)
     p.add_argument("--full-clip-simulation", action="store_true", help="entire clip, isolated simulation only")
+    p.add_argument("--full-motion", action="store_true", help="entire clip for hardware deployment; ignores start and max seconds")
     p.add_argument("--suggest-starts", action="store_true")
     p.add_argument("--reference", type=Path, help="fresh disabled-pose capture")
     p.add_argument("--output-dir", type=Path)
@@ -99,19 +100,31 @@ def main() -> None:
         return
     if args.reference is None or args.output_dir is None or args.start_seconds is None:
         p.error("preparation requires --reference, --output-dir and --start-seconds")
-    if not math.isfinite(args.max_seconds) or not .5 <= args.max_seconds <= 30:
-        p.error("initial test window must be 0.5-30 seconds")
-    if not math.isfinite(args.start_seconds) or args.start_seconds < 0:
-        p.error("invalid start time")
-    start = round(args.start_seconds / .02)
-    stop = start + math.ceil(args.max_seconds / .02) + 1
-    if args.full_clip_simulation:
-        if start != 0:
-            p.error("full-clip simulation must start at frame zero")
-        stop = clip.frames
-        args.max_seconds = (stop - start - 1) * .02
+    if args.full_clip_simulation and args.full_motion:
+        p.error("Choose one full-motion mode")
+    if args.full_clip_simulation and args.start_seconds != 0:
+        p.error("full-clip simulation must start at frame zero")
+    if args.full_clip_simulation or args.full_motion:
+        start, stop = 0, clip.frames
+        args.max_seconds = (stop - 1) * .02
         if args.max_seconds > 600:
-            p.error("full-clip simulation is limited to 600 seconds")
+            p.error("full motion is limited to 600 seconds")
+        if args.full_motion and args.max_seconds < 5:
+            p.error("hardware full motion must last at least 5 seconds")
+    else:
+        if not math.isfinite(args.max_seconds) or args.max_seconds < 5:
+            p.error("hardware playback duration must be at least 5 seconds")
+        if not math.isfinite(args.start_seconds) or args.start_seconds < 0:
+            p.error("invalid start time")
+        start = round(args.start_seconds / .02)
+        if start >= clip.frames - 1:
+            p.error("motion start runs past the end of the clip")
+        remaining_frames = clip.frames - 1 - start
+        if remaining_frames < 250:
+            p.error("fewer than 5 seconds remain at the selected start")
+        window_frames = remaining_frames if args.max_seconds >= remaining_frames * .02 else math.ceil(args.max_seconds / .02)
+        stop = start + window_frames + 1
+        args.max_seconds = window_frames * .02
     if start >= clip.frames - 1 or stop > clip.frames:
         p.error("motion window runs past the end of the clip")
     q0 = clip.q[start].numpy()

@@ -82,11 +82,10 @@ State_SuperMimic::State_SuperMimic(int mode, std::string name)
 
     standby_flow_ = cfg["standby_flow"].as<bool>(false);
     const double duration = cfg["max_seconds"].as<double>();
-    const double duration_limit = cfg["simulation_only"].as<bool>(false) ? 600. : 30.;
     transition_seconds_ = cfg["transition_seconds"].as<float>(1.f);
-    if (!std::isfinite(duration) || duration <= 0 || duration > duration_limit ||
+    if (!std::isfinite(duration) || duration <= 0 || duration > 600. ||
         !std::isfinite(transition_seconds_) || transition_seconds_<0 || transition_seconds_>5)
-        throw std::runtime_error("initial deployment requires max_seconds in (0,30], transition in [0,5]");
+        throw std::runtime_error("SuperMimic requires max_seconds in (0,600], transition in [0,5]");
     frame_limit_ = std::min(frames_.size(), size_t(std::ceil(duration/0.02 - 1e-8)));
     history_.resize(size_t(history_frames_)*kObs);
     desired_ = frames_[0].q;

@@ -23,8 +23,8 @@ def check(session):
     if set(record.get('validation_profiles',{}))!={'nominal','arm_stress'} or not all(
             all(p['checks'].values()) and p['sha256']==record['sha256'] for p in record['validation_profiles'].values()):
         raise RuntimeError('Both nominal and arm load/friction stress validations are required')
-    if not .5 <= cfg['FSM']['Velocity']['max_seconds'] <= 30:
-        raise RuntimeError('Hardware window must be 0.5–30 seconds')
+    if not 5 <= cfg['FSM']['Velocity']['max_seconds'] <= 600:
+        raise RuntimeError('Hardware window must be 5–600 seconds')
     return record
 
 def run(session, orientation_fault_at=None, fault=None, fault_at=None, stress=False):
