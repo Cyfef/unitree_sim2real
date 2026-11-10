@@ -80,6 +80,7 @@ def main():
                         help="synthetic wrist torque headroom to test measured overloads")
     parser.add_argument("--gdb", action="store_true", help="capture a controller crash backtrace")
     parser.add_argument("--output", type=Path, required=True, help="new directory for logs")
+    parser.add_argument("--record-video", action="store_true", help="capture policy-motion poses for video rendering after simulation")
     parser.add_argument("--sim-profile", choices=("baseline",), default="baseline")
     parser.add_argument("--orientation-fault-at", type=float, help="isolated test: publish inverted IMU after this simulation time")
     args = parser.parse_args()
@@ -210,6 +211,8 @@ def main():
     state.mode_machine, state.mode_pr = 5, 0
     rows = []
     joint_rows=[]
+    video_times=[]
+    video_qpos=[]
     max_tau = np.zeros(29)
     max_speed = np.zeros(29)
     mass = float(sum(model.body_mass))
@@ -393,6 +396,11 @@ def main():
                 state.crc = crc.Crc(state)
                 if args.fault=="crc" and t>args.fault_at: state.crc ^= 1
                 if not (args.fault=="stale" and t>args.fault_at): publisher.Write(state)
+                if args.record_video and step % 10 == 0:
+                    video_start = (motion_request_start + .5) if args.policy_standby_flow and motion_request_start is not None else (policy_at if not args.policy_standby_flow else None)
+                    if video_start is not None and t >= video_start:
+                        video_times.append(t - video_start)
+                        video_qpos.append(data.qpos.copy())
                 if step % 50 == 0:
                     quat = data.xquat[pelvis]
                     tilt = math.acos(float(np.clip(1-2*(quat[1]**2+quat[2]**2), -1, 1)))
@@ -445,6 +453,10 @@ def main():
                 process.wait()
             publisher.Close()
             subscriber.Close()
+    if args.record_video and video_qpos:
+        np.savez_compressed(args.output/"video_states.npz",
+                            time_s=np.asarray(video_times, dtype=np.float32),
+                            qpos=np.asarray(video_qpos, dtype=np.float32))
     with (args.output/"state.csv").open("x", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(["t", "x", "y", "z", "vx", "vy", "vz", "tilt_rad", "support_fraction",

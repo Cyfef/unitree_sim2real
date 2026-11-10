@@ -3,3 +3,5 @@
 torch==2.7.1+cpu
 onnx==1.17.0
 onnxruntime==1.22.0
+
+imageio-ffmpeg==0.8.1

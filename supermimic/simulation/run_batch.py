@@ -4,25 +4,25 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1];BUNDLE=ROOT.parent;BASE=Path(__file__).resolve().parent
 sys.path.insert(0,str(BUNDLE/'scripts'))
 from runtime_env import shared_runtime_env
-p=argparse.ArgumentParser(description=__doc__);p.add_argument('--name',required=True);p.add_argument('--workers',type=int,default=8);p.add_argument('--policy',choices=('baseline','backpack'),default='backpack');p.add_argument('--stand-gains',choices=('original','policy','official'),default='policy');a=p.parse_args()
+p=argparse.ArgumentParser(description=__doc__);p.add_argument('--name',required=True);p.add_argument('--workers',type=int,default=8);p.add_argument('--policy',choices=('baseline','backpack','backpack_retrain'),default='backpack');p.add_argument('--stand-gains',choices=('original','policy','official'),default='policy');p.add_argument('--record-video',action='store_true',help='save an MP4 for each motion after all simulations finish');a=p.parse_args()
 if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*',a.name) or not 1<=a.workers<=8:p.error('invalid batch name or concurrency')
 B=ROOT/'outputs/simulation'/a.policy/'batches'/a.name;B.mkdir(parents=True,exist_ok=False)
 LOG_DIR=B/'logs';LOG_DIR.mkdir()
 (LOG_DIR/'launch.json').write_text(json.dumps({
  'pid':os.getpid(),'started':datetime.datetime.now().isoformat(),'batch':str(B),
  'workers':a.workers,'physical_robot_run':False,'model':'hands_backpack',
- 'physics_dt':.005,'policy':a.policy,'stand_gains':a.stand_gains},indent=2)+'\n')
+ 'physics_dt':.005,'policy':a.policy,'stand_gains':a.stand_gains,'record_video':a.record_video},indent=2)+'\n')
 logger=logging.getLogger('supermimic_simulation_batch');logger.setLevel(logging.INFO);logger.propagate=False
 for handler in [logging.FileHandler(LOG_DIR/'batch.log',mode='x'),logging.StreamHandler(sys.stdout)]:
  handler.setFormatter(logging.Formatter('%(message)s'));logger.addHandler(handler)
 clips=sorted(x.stem for x in (ROOT/'assets/motions').glob('*.csv'));assert len(clips)==40
 ref=BASE/'poses/standby.json'
-paths=[BASE/'run.py',BASE/'bridge.py',ROOT/'tools/prepare_clip.py',ROOT/'tools/stand_plan.py',ROOT/'contract.py',ROOT/'config/recovery_template.json',BASE/'model_tools.py',BASE/'physics.json',BASE/'official_fixstand_gains.json',BUNDLE/'simulation_core/physics.py',BUNDLE/'scripts/runtime_env.py',ROOT/'tools/model.py',ROOT/'assets/policies'/a.policy/'policy.onnx',ROOT/'assets/policies'/a.policy/'policy_meta.json',BUNDLE/'rl_lab_controller/g1_29dof_deployment/build_simulation/g1_ctrl',BUNDLE/'models/g1_29dof_with_hand_rev_1_0.xml',ref]
+paths=[BASE/'run.py',BASE/'bridge.py',BASE/'render_video.py',ROOT/'tools/prepare_clip.py',ROOT/'tools/stand_plan.py',ROOT/'contract.py',ROOT/'config/recovery_template.json',BASE/'model_tools.py',BASE/'physics.json',BASE/'official_fixstand_gains.json',BUNDLE/'simulation_core/physics.py',BUNDLE/'scripts/runtime_env.py',ROOT/'tools/model.py',ROOT/'assets/policies'/a.policy/'policy.onnx',ROOT/'assets/policies'/a.policy/'policy_meta.json',BUNDLE/'rl_lab_controller/g1_29dof_deployment/build_simulation/g1_ctrl',BUNDLE/'models/g1_29dof_with_hand_rev_1_0.xml',ref]
 paths += sorted((BUNDLE/'models/meshes').glob('*.STL'))
 paths += sorted((ROOT/'assets/motions').glob('*.csv'))
 sha=lambda x:hashlib.sha256(x.read_bytes()).hexdigest()
 hashes={str(x.relative_to(BUNDLE)):sha(x) for x in paths}
-manifest=dict(name=a.name,policy=a.policy,clips=clips,workers=a.workers,started=datetime.datetime.now().isoformat(),physical_robot_test=False,model_variant='hands_backpack',imu_convention='deployment',stand_gains=a.stand_gains,physics_dt=.005,control_dt=.02,start_frame=0,full_clip=True,sha256=hashes)
+manifest=dict(name=a.name,policy=a.policy,clips=clips,workers=a.workers,started=datetime.datetime.now().isoformat(),physical_robot_test=False,model_variant='hands_backpack',imu_convention='deployment',stand_gains=a.stand_gains,physics_dt=.005,control_dt=.02,start_frame=0,full_clip=True,record_video=a.record_video,video_fps=20 if a.record_video else None,sha256=hashes)
 (B/'manifest.json').write_text(json.dumps(manifest,indent=2));(B/'driver_snapshot.py').write_text(Path(__file__).read_text())
 results={c:dict(status='queued') for c in clips};lock=threading.Lock()
 env=shared_runtime_env()
@@ -48,8 +48,10 @@ def evaluate(c):
   assert cfg['FSM']['Velocity']['simulation_only'] and cfg['FSM']['Velocity']['max_seconds']==prep['max_seconds']
   run=B/'runs'/c
   update(c,status='running',motion_seconds=prep['max_seconds'],frames=frames,run=str(run.relative_to(ROOT)))
+  run_args=[sys.executable,str(BASE/'run.py'),'--source-session',str(out),'--name',c,'--batch',a.name,'--policy',a.policy,'--stand-gains',a.stand_gains,'--imu-convention','deployment']
+  if a.record_video:run_args.append('--record-video')
   with (LOG_DIR/(c+'_launch.log')).open('x') as f:
-   q=subprocess.run([sys.executable,str(BASE/'run.py'),'--source-session',str(out),'--name',c,'--batch',a.name,'--policy',a.policy,'--stand-gains',a.stand_gains,'--imu-convention','deployment'],cwd=ROOT,env=env,stdout=f,stderr=subprocess.STDOUT)
+   q=subprocess.run(run_args,cwd=ROOT,env=env,stdout=f,stderr=subprocess.STDOUT)
   summary=run/'simulation/summary.json'
   if not summary.exists():
    update(c,status='infrastructure_error',reason=(LOG_DIR/(c+'_launch.log')).read_text()[-2000:],finished=datetime.datetime.now().isoformat());return
@@ -60,6 +62,23 @@ def evaluate(c):
   update(c,status='passed' if passed else 'invalid_timing' if d.get('timing_invalid') else 'failed',exit_code=q.returncode,phase='motion_or_post' if start else 'standby' if d.get('policy_entered') else 'preparation',fault=fault[2] if fault else d.get('test_loop_error') or d.get('error'),motion_seconds_to_fault=secs,checks=d.get('supermimic_checks'),timing_invalid=d.get('timing_invalid'),finished=datetime.datetime.now().isoformat())
  except Exception as e:update(c,status='infrastructure_error',reason=repr(e),finished=datetime.datetime.now().isoformat())
 with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:list(pool.map(evaluate,clips))
+if a.record_video:
+ for c in clips:
+  run=B/'runs'/c
+  trace=run/'simulation/video_states.npz'
+  if not trace.is_file():
+   update(c,video_status='unavailable',video_reason='No policy-motion frames captured')
+   continue
+  update(c,video_status='rendering')
+  video_log=LOG_DIR/(c+'_video.log')
+  with video_log.open('x') as f:
+   rendered=subprocess.run([sys.executable,str(BASE/'render_video.py'),'--run',str(run)],
+                           cwd=ROOT,env=env,stdout=f,stderr=subprocess.STDOUT)
+  video=run/'simulation/video.mp4'
+  if rendered.returncode==0 and video.is_file():
+   update(c,video_status='saved',video=str(video.relative_to(ROOT)),video_bytes=video.stat().st_size)
+  else:
+   update(c,video_status='failed',video_reason=video_log.read_text()[-2000:])
 counts={s:sum(x['status']==s for x in results.values()) for s in sorted({x['status'] for x in results.values()})}
 unchanged={k:sha(BUNDLE/k)==h for k,h in hashes.items()}
 final=dict(manifest=manifest,finished=datetime.datetime.now().isoformat(),counts=counts,results=results,frozen_inputs_unchanged=unchanged,complete=len(results)==40 and all(x['status'] not in ['queued','preparing','running'] for x in results.values()))

@@ -10,7 +10,7 @@ TASK = BASE.parent
 ROOT = TASK.parent
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--policy', choices=('baseline', 'backpack'), default='backpack')
+    parser.add_argument('--policy', choices=('baseline', 'backpack', 'backpack_retrain'), default='backpack')
     args = parser.parse_args()
     required = [
         ROOT / 'rl_lab_controller/g1_29dof_deployment/build_simulation/g1_ctrl',

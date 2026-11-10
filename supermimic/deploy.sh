@@ -7,11 +7,15 @@ usage() {
 Usage:
   bash deploy.sh check [--network enp12s0]
     Offline dependency/namespace checks; no robot queries or commands.
-  bash deploy.sh prepare --policy baseline|backpack --clip NAME [--start-seconds 0] [--max-seconds 5 | --full-motion] --supported-grounded [--network NAME]
+  bash deploy.sh prepare --policy baseline|backpack|backpack_retrain --clip NAME [--start-seconds 0] [--max-seconds 5 | --full-motion] [--skip-simulation] --supported-grounded [--network NAME]
     ONSITE ONLY: release official control (motors may relax), capture current
-    pose, prepare selected clip, verify in isolated simulation. Does not launch policy.
+    pose and prepare selected clip. By default, verify in isolated simulation;
+    --skip-simulation records an explicit bypass. Does not launch policy.
   bash deploy.sh run --session PATH --supported-grounded --execute [--network NAME]
-    ONSITE ONLY: validated controller launch; automatic FixStand after ~3 seconds.
+    ONSITE ONLY: launch a validated or explicitly simulation-skipped candidate;
+    automatic FixStand after ~3 seconds. During motion, R1+Y stops playback
+    and holds the current reference pose; playback cannot resume. L2+B enters
+    Passive damping; Ctrl+C disables commands.
 TXT
 }
 command="${1:-help}"
@@ -23,7 +27,7 @@ case "$command" in
   prepare) ;;
   *) usage >&2; exit 2 ;;
 esac
-POLICY=''; CLIP=''; START=0; SECONDS_TO_PLAY=5; FULL_MOTION=0; NETWORK="$SUPERMIMIC_NETWORK"; SUPPORTED=0
+POLICY=''; CLIP=''; START=0; SECONDS_TO_PLAY=5; FULL_MOTION=0; SKIP_SIMULATION=0; NETWORK="$SUPERMIMIC_NETWORK"; SUPPORTED=0
 while (($#)); do
   case "$1" in
     --policy) POLICY="${2:?missing policy}"; shift 2 ;;
@@ -31,6 +35,7 @@ while (($#)); do
     --start-seconds) START="${2:?missing start}"; shift 2 ;;
     --max-seconds) SECONDS_TO_PLAY="${2:?missing duration}"; shift 2 ;;
     --full-motion) FULL_MOTION=1; shift ;;
+    --skip-simulation) SKIP_SIMULATION=1; shift ;;
     --network) NETWORK="${2:?missing network}"; shift 2 ;;
     --supported-grounded) SUPPORTED=1; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
@@ -39,8 +44,8 @@ done
 if [[ -n "${SSH_CONNECTION:-}" || -n "${SSH_CLIENT:-}" ]]; then
   echo 'Run prepare at the robot workstation with an onsite operator, not over SSH.' >&2; exit 2
 fi
-if (( !SUPPORTED )) || [[ -z "$CLIP" ]] || [[ "$POLICY" != baseline && "$POLICY" != backpack ]]; then
-  echo 'prepare requires --policy baseline|backpack, --clip and --supported-grounded.' >&2; exit 2
+if (( !SUPPORTED )) || [[ -z "$CLIP" ]] || [[ "$POLICY" != baseline && "$POLICY" != backpack && "$POLICY" != backpack_retrain ]]; then
+  echo 'prepare requires --policy baseline|backpack|backpack_retrain, --clip and --supported-grounded.' >&2; exit 2
 fi
 # Validate the selected motion before any robot release call. Reference entries are 20 ms apart.
 "$PYTHON_BIN" - "$ROOT" "$CLIP" "$START" "$SECONDS_TO_PLAY" "$FULL_MOTION" <<'PYVALIDATE'
@@ -88,6 +93,11 @@ else
   PREPARE_ARGS+=(--start-seconds "$START" --max-seconds "$SECONDS_TO_PLAY")
 fi
 "$PYTHON_BIN" "$ROOT/deployment/prepare.py" "${PREPARE_ARGS[@]}" 2>&1 | tee "$SESSION/logs/prepare.log"
-"$PYTHON_BIN" "$ROOT/deployment/verify.py" --session "$SESSION/candidate" 2>&1 | tee "$SESSION/logs/verify.log"
-echo 'Prepared and verified. Policy has NOT been launched. Launch separately onsite:'
+if (( SKIP_SIMULATION )); then
+  "$PYTHON_BIN" "$ROOT/deployment/verify.py" --session "$SESSION/candidate" --record-skip 2>&1 | tee "$SESSION/logs/skip_simulation.log"
+  echo 'Prepared WITHOUT simulation validation. Policy has NOT been launched. Launch separately onsite:'
+else
+  "$PYTHON_BIN" "$ROOT/deployment/verify.py" --session "$SESSION/candidate" 2>&1 | tee "$SESSION/logs/verify.log"
+  echo 'Prepared and verified. Policy has NOT been launched. Launch separately onsite:'
+fi
 printf 'bash %q run --session %q --network %q --supported-grounded --execute\n' "$ROOT/deploy.sh" "$SESSION/candidate" "$NETWORK"

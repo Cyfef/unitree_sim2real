@@ -13,19 +13,58 @@ from isolation import isolated_command
 sys.path.insert(0, str(ROOT.parent / 'scripts'))
 from runtime_env import shared_runtime_env
 
+def record_skip(session):
+    cfg, prep = read_candidate(session)
+    if prep['simulation_only']:
+        raise RuntimeError('Simulation-only candidate cannot authorize hardware')
+    if not 5 <= cfg['FSM']['Velocity']['max_seconds'] <= 600:
+        raise RuntimeError('Hardware window must be 5–600 seconds')
+    if (session / 'validation_synced.json').exists():
+        raise RuntimeError('Candidate already has simulation validation')
+    marker = session / 'simulation_skipped.json'
+    record = {'status': 'simulation_skipped_by_operator', 'profile': PROFILE,
+              'physical_robot_test': False, 'simulation_passed': False,
+              'checks': {'simulation_skipped': True},
+              'sha256': hashes(session), 'runtime': runtime_signature()}
+    with marker.open('x') as stream:
+        json.dump(record, stream, indent=2)
+        stream.write('\n')
+    print(json.dumps({'status': record['status'], 'session': str(session),
+                      'record': marker.name}))
+    return record
+
+
 def check(session):
     cfg, prep = read_candidate(session)
     if prep['simulation_only']:
         raise RuntimeError('Full-length simulation candidate cannot authorize hardware')
-    record = json.loads((session / 'validation_synced.json').read_text())
+    if not 5 <= cfg['FSM']['Velocity']['max_seconds'] <= 600:
+        raise RuntimeError('Hardware window must be 5–600 seconds')
+    marker = session / 'simulation_skipped.json'
+    validated = session / 'validation_synced.json'
+    if marker.exists():
+        if validated.exists():
+            raise RuntimeError('Candidate has conflicting simulation records')
+        record = json.loads(marker.read_text())
+        if (record.get('status') != 'simulation_skipped_by_operator'
+                or record.get('profile') != PROFILE
+                or record.get('physical_robot_test') is not False
+                or record.get('simulation_passed') is not False
+                or record.get('checks') != {'simulation_skipped': True}
+                or record.get('sha256') != hashes(session)
+                or record.get('runtime') != runtime_signature()):
+            raise RuntimeError('Simulation skip record or assets changed; prepare again')
+        return record
+    if not validated.exists():
+        raise RuntimeError('Simulation validation or explicit skip record missing; prepare again')
+    record = json.loads(validated.read_text())
     if record.get('status') != 'same_binary_isolated_simulation_passed' or record.get('profile') != PROFILE or record.get('sha256') != hashes(session) or record.get('runtime') != runtime_signature():
         raise RuntimeError('Shared-controller validation missing or assets changed; prepare and verify again')
     if set(record.get('validation_profiles',{}))!={'nominal','arm_stress'} or not all(
             all(p['checks'].values()) and p['sha256']==record['sha256'] for p in record['validation_profiles'].values()):
         raise RuntimeError('Both nominal and arm load/friction stress validations are required')
-    if not 5 <= cfg['FSM']['Velocity']['max_seconds'] <= 600:
-        raise RuntimeError('Hardware window must be 5–600 seconds')
     return record
+
 
 def run(session, orientation_fault_at=None, fault=None, fault_at=None, stress=False):
     sys.path.insert(0, str(ROOT / 'tools'))
@@ -102,11 +141,16 @@ def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--session', type=Path, required=True)
     p.add_argument('--check-only', action='store_true')
+    p.add_argument('--record-skip', action='store_true', help='record intentional omission of deployment simulation')
     p.add_argument('--orientation-fault-at', type=float)
     p.add_argument('--fault', choices=['stale', 'crc', 'mode', 'stand_stall'])
     p.add_argument('--fault-at', type=float)
     a = p.parse_args(); session = a.session.resolve()
-    if a.check_only: print(json.dumps(check(session)['checks']))
+    if a.check_only and a.record_skip: p.error('Choose check-only or record-skip')
+    if a.check_only:
+        record = check(session)
+        print(json.dumps({'status': record['status'], 'checks': record['checks']}))
+    elif a.record_skip: record_skip(session)
     elif a.orientation_fault_at is not None or a.fault is not None:
         run(session, a.orientation_fault_at, a.fault, a.fault_at)
     else:

@@ -14,6 +14,7 @@ from collections import deque
 import csv
 import json
 import math
+import re
 from pathlib import Path
 import socket
 import struct
@@ -50,6 +51,9 @@ def main():
     parser.add_argument("--expect-policy-window-stop", action="store_true",
                         help="SuperMimic: enter policy and verify its bounded-window disabled shutdown")
     parser.add_argument("--policy-standby-flow", action="store_true", help="R1+A standby, R1+X motion, verify three seconds of final hold")
+    parser.add_argument("--emergency-hold-after-motion", type=float, help="isolated test: send R1+Y during motion, seconds after R1+X")
+    parser.add_argument("--emergency-hold-min-seconds", type=float, help="isolated test: require this many seconds of active post-stop hold")
+    parser.add_argument("--standby-min-seconds", type=float, help="isolated test: require this many seconds of pre-motion policy standby")
     parser.add_argument("--no-stand-button", action="store_true", help="test configured one-shot automatic stand without simulated L2+Up")
     parser.add_argument("--fault", choices=("stale","crc","torque","mode","stand_stall"))
     parser.add_argument("--fault-at", type=float, default=6., help="simulation time of fault injection")
@@ -117,6 +121,12 @@ def main():
         parser.error("suspended tests need --hands, --initial-pose and --config")
     if args.policy_standby_flow and (args.suspended or not args.expect_policy_window_stop):
         parser.error("standby flow requires grounded window validation")
+    if args.emergency_hold_after_motion is not None and (not args.policy_standby_flow or not 1 <= args.emergency_hold_after_motion <= 30):
+        parser.error("emergency hold test requires standby flow and a delay in [1, 30] seconds")
+    if args.emergency_hold_min_seconds is not None and (args.emergency_hold_after_motion is None or not 1 <= args.emergency_hold_min_seconds <= 180):
+        parser.error("minimum emergency hold requires the emergency hold test and 1–180 seconds")
+    if args.standby_min_seconds is not None and (not args.policy_standby_flow or not 1 <= args.standby_min_seconds <= 180):
+        parser.error("minimum standby requires standby flow and 1–180 seconds")
     if args.expect_policy_window_stop and not args.config:
         parser.error("SuperMimic window check requires --config")
     if {name for _, name in socket.if_nameindex()} != {"lo"}:
@@ -251,11 +261,17 @@ def main():
         try:
             feet_contact_at=args.stand_time+.5 if args.grounded_start else args.stand_time+4.5
             policy_at=feet_contact_at+args.policy_delay
+            play_delay=max(6.,args.standby_min_seconds+1 if args.standby_min_seconds is not None else 6.)
+            play_at=policy_at+play_delay
             release_at=policy_at+args.support_delay+args.release_duration
             forward_at=release_at+args.zero_time
             if args.expect_policy_window_stop:
                 window=yaml.safe_load(args.config.read_text())["FSM"]["Velocity"]["max_seconds"]
-                duration=policy_at+window+(9.5 if args.policy_standby_flow else 2.0)
+                if args.emergency_hold_after_motion is not None and args.emergency_hold_after_motion >= window-.5:
+                    parser.error("emergency hold must occur before the motion window ends")
+                duration=policy_at+window+(play_delay+3.5 if args.policy_standby_flow else 2.0)
+                if args.emergency_hold_min_seconds is not None:
+                    duration=max(duration,play_at+args.emergency_hold_after_motion+args.emergency_hold_min_seconds+2)
             else:
                 duration=args.stand_time+7.5 if args.suspended else forward_at+args.forward_duration+args.post_forward_hold
             for step in range(int(duration/bridge_dt)):
@@ -340,8 +356,12 @@ def main():
                     keys = (1<<0) | ((1<<10) if t>7.5 else 0)
                 elif args.policy_standby_flow and policy_at-.5<t<policy_at+.5:
                     keys = (1<<0) | ((1<<8) if t>policy_at else 0)  # R1+A: static policy standby
-                elif args.policy_standby_flow and policy_at+5.5<t<policy_at+6.5:
-                    keys = (1<<0) | ((1<<10) if t>policy_at+6 else 0)  # R1+X: play
+                elif args.policy_standby_flow and play_at-.5<t<play_at+.5:
+                    keys = (1<<0) | ((1<<10) if t>play_at else 0)  # R1+X: play
+                elif args.emergency_hold_after_motion is not None and play_at+args.emergency_hold_after_motion<t<play_at+.5+args.emergency_hold_after_motion:
+                    keys = (1<<0) | (1<<11)  # R1+Y: stop motion and hold
+                elif args.emergency_hold_after_motion is not None and play_at+1.2+args.emergency_hold_after_motion<t<play_at+1.7+args.emergency_hold_after_motion:
+                    keys = (1<<0) | (1<<10)  # R1+X: attempted resume must be ignored
                 elif not args.policy_standby_flow and (not args.suspended or args.expect_policy_window_stop) and policy_at-.5<t<policy_at+.5:
                     keys = (1<<0) | ((1<<10) if t>policy_at else 0)
                 state.wireless_remote[0:2] = [0xfe, 0xef]
@@ -496,6 +516,34 @@ def main():
                           final_hold_entered="SuperMimic: STANDBY_POST;" in controller_log,
                           full_test_schedule_completed=completed_schedule,
                           no_bridge_error=not invalid and loop_error is None)
+            if args.standby_min_seconds is not None:
+                trace_path=Path(yaml.safe_load(args.config.read_text())["FSM"]["Velocity"]["orientation_trace"])
+                standby_times=[]
+                if trace_path.is_file():
+                    with trace_path.open(newline="") as trace:
+                        standby_times=[float(row["policy_t"]) for row in csv.DictReader(trace) if row["phase"]=="0"]
+                standby_seconds=standby_times[-1]-standby_times[0] if standby_times else 0.0
+                checks["minimum_standby_duration_met"]=standby_seconds >= args.standby_min_seconds
+                summary["standby_seconds"] = standby_seconds
+            if args.emergency_hold_after_motion is not None:
+                checks.pop("final_hold_entered")
+                trace_path=Path(yaml.safe_load(args.config.read_text())["FSM"]["Velocity"]["orientation_trace"])
+                held_rows=[]
+                if trace_path.is_file():
+                    with trace_path.open(newline="") as trace:
+                        held_rows=[row for row in csv.DictReader(trace) if row["phase"]=="2"]
+                held_frames=[int(row["frame"]) for row in held_rows]
+                stop_match=re.search(r"SuperMimic: EMERGENCY_HOLD; R1\+Y stopped motion at frame (\d+)", controller_log)
+                stopped_frame=int(stop_match.group(1)) if stop_match else None
+                checks.update(emergency_hold_entered=stopped_frame is not None,
+                              held_reference_constant=bool(held_frames) and len(set(held_frames))==1,
+                              held_reference_matches_stop=bool(held_frames) and held_frames[0]==stopped_frame,
+                              no_motion_resume=controller_log.count("SuperMimic: MOTION from") == 1)
+                if args.emergency_hold_min_seconds is not None:
+                    held_seconds=float(held_rows[-1]["policy_t"])-float(held_rows[0]["policy_t"]) if held_rows else 0.0
+                    checks["minimum_hold_duration_met"]=held_seconds >= args.emergency_hold_min_seconds
+                    summary["emergency_hold_seconds"] = held_seconds
+                summary["emergency_hold_frame"] = held_frames[0] if held_frames else None
         summary["test_loop_error"]=loop_error
         summary["policy_standby_flow"]=args.policy_standby_flow
         summary["supermimic_checks"]=checks

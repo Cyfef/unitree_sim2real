@@ -35,7 +35,7 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 mkdir -p "$ROOT/outputs/deployment"
 exec 9>"$ROOT/outputs/deployment/.launch.lock"
 flock -n 9 || { echo 'Another SuperMimic launch is active.' >&2; exit 1; }
-echo 'Checking saved isolated simulation validation (these are not live robot results):'
+echo 'Checking saved simulation validation or explicit skip record (neither is a live robot result):'
 "$PYTHON_BIN" "$ROOT/deployment/verify.py" --session "$SESSION" --check-only
 "$PYTHON_BIN" "$UNITREE_SIM2REAL_ROOT/rl_lab_controller/g1_29dof_deployment/policy_preflight.py" \
   --network "$NETWORK" --reference "$SESSION/reference.json"

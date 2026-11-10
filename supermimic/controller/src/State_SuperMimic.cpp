@@ -206,20 +206,23 @@ void State_SuperMimic::inference_loop() noexcept {
         int phase=standby_flow_ ? 0 : 1;  // PRE, MOTION, POST
         size_t frame=0, tick=0;
         double stable=0, released=0, pressed=0;
-        bool armed=false, ready_logged=false;
+        bool armed=false, ready_logged=false, stop_combo_prev=false;
         auto phase_start=next;
         const auto pre_goal=static_goal(frames_.front());
-        const auto& end_frame=frames_[std::min(frame_limit_,frames_.size()-1)];
-        const auto post_goal=static_goal(end_frame);
+        size_t hold_index=std::min(frame_limit_,frames_.size()-1);
+        Frame hold_frame=frames_[hold_index];
+        auto hold_goal=static_goal(hold_frame);
         if (standby_flow_) {
             spdlog::info("SuperMimic: STANDBY_PRE; policy holds static first frame; R1+X starts motion after readiness");
-            spdlog::info("[操作提示] 已进入策略静态待机（最长 120 秒）。请松开组合键，等待“待机已稳定”提示后再按 R1+X。");
+            spdlog::info("[操作提示] 已进入策略静态待机。请松开组合键，等待“待机已稳定”提示后再按 R1+X。");
         }
         while (running_.load()) {
             const auto begin=std::chrono::steady_clock::now();
             const double elapsed=std::chrono::duration<double>(begin-phase_start).count();
             const Snapshot s=snapshot();
-            if (phase!=1 && elapsed>120.) throw std::runtime_error("policy standby exceeded 120 seconds");
+            const bool stop_combo=(s.keys & ((1<<0)|(1<<11)))==((1<<0)|(1<<11)); // R1+Y
+            const bool stop_pressed=stop_combo && !stop_combo_prev;
+            stop_combo_prev=stop_combo;
             if (phase==0) {
                 const Eigen::Matrix3f R=yaw_alignment_*s.quat.normalized().toRotationMatrix();
                 const float cosine=std::clamp(R.row(2).dot(frames_.front().R.row(2)),-1.f,1.f);
@@ -246,7 +249,7 @@ void State_SuperMimic::inference_loop() noexcept {
                         if (ready) {
                             phase=1;frame=0;phase_start=begin;
                             spdlog::info("SuperMimic: MOTION from selected first frame; history preserved");
-                            spdlog::info("[操作提示] 动作播放中。L2+B 切回阻尼；Ctrl+C 退出并禁用电机。");
+                            spdlog::info("[操作提示] 动作播放中。R1+Y 停止动作并保持当前帧；L2+B 切回阻尼；Ctrl+C 退出并禁用电机。");
                         } else {
                             spdlog::warn("SuperMimic: R1+X refused; standby is not stable yet");
                             spdlog::warn("[操作提示] 尚未稳定，本次 R1+X 未执行。请松开组合键，等待待机就绪后重新按。");
@@ -254,13 +257,22 @@ void State_SuperMimic::inference_loop() noexcept {
                     }
                 }
             }
-            const Frame& ref=phase==0 ? frames_.front() : phase==2 ? end_frame : frames_[frame];
+            if (phase==1 && stop_pressed) {
+                const size_t stopped_frame=frame;
+                hold_index=stopped_frame;
+                hold_frame=frames_[hold_index];
+                hold_goal=static_goal(hold_frame);
+                phase=2;phase_start=begin;
+                spdlog::warn("SuperMimic: EMERGENCY_HOLD; R1+Y stopped motion at frame {} ({:.2f}s); policy holds this frame; resume disabled",stopped_frame,stopped_frame*.02);
+                spdlog::warn("[操作提示] 动作已停止，持续保持当前帧，无法继续播放。L2+B 切回阻尼；Ctrl+C 退出并禁用电机。");
+            }
+            const Frame& ref=phase==0 ? frames_.front() : phase==2 ? hold_frame : frames_[frame];
             // Evaluate before issuing another policy target. No added debounce:
             // the legacy sim2sim termination was evaluated every 20 ms as well.
             const auto error=supermimic::reference_orientation_error(
                 s.quat.normalized().toRotationMatrix(),ref.R);
             const bool bad=supermimic::reference_orientation_failed(error);
-            const size_t ref_index=phase==0 ? 0 : phase==2 ? std::min(frame_limit_,frames_.size()-1) : frame;
+            const size_t ref_index=phase==0 ? 0 : phase==2 ? hold_index : frame;
             if (orientation_trace_) {
                 orientation_trace_ << std::chrono::duration<double>(begin-entered_).count() << ','
                     << phase << ',' << ref_index << ',' << ref_index*.02 << ','
@@ -284,7 +296,7 @@ void State_SuperMimic::inference_loop() noexcept {
                 std::move(history_.begin()+kObs,history_.end(),history_.begin());
                 std::copy(obs.begin(),obs.end(),history_.end()-kObs);
             }
-            const auto& goal=phase==0 ? pre_goal : phase==2 ? post_goal : ref.goal;
+            const auto& goal=phase==0 ? pre_goal : phase==2 ? hold_goal : ref.goal;
             const auto action=model_->act({{"obs_hist",history_},{"goal",goal}});
             if (action.size()!=kJoints) throw std::runtime_error("policy output not 29 joints");
             std::array<float,kJoints> target{};
@@ -309,7 +321,7 @@ void State_SuperMimic::inference_loop() noexcept {
                 }
                 phase=2;phase_start=std::chrono::steady_clock::now();
                 spdlog::info("SuperMimic: STANDBY_POST; motion finished, policy holds final frame; history preserved");
-                spdlog::info("[操作提示] 动作已结束，正在保持末帧（最长 120 秒），未自动禁用电机。L2+B 切回阻尼；Ctrl+C 退出并禁用电机。");
+                spdlog::info("[操作提示] 动作已结束，持续保持末帧，未自动禁用电机。L2+B 切回阻尼；Ctrl+C 退出并禁用电机。");
             }
         }
     } catch (const std::exception& e) { trip(e.what()); }

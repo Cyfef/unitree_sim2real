@@ -43,16 +43,19 @@
     "supermimic/assets/motions/walk3_subject5.csv": "2f2878a45d6345d78d5f7a1d35ab05cc96cf5d22b1be822bb4b07eab99096b85",
     "supermimic/assets/motions/walk4_subject1.csv": "03fe681190873e70d2b5635dc35aa228084136fcd61f1a0dcfcd6c25e12cdbaa",
     "supermimic/assets/policies/backpack/policy.onnx": "139083834c53458f40aae58a2e61cc99e15dbdd4465513f1f73144cdf3071307",
-    "supermimic/assets/policies/baseline/policy.onnx": "7de12668ee0076b2ce2b116a29f262d785a63d995d162d8fc05c15e19716d615"
+    "supermimic/assets/policies/baseline/policy.onnx": "7de12668ee0076b2ce2b116a29f262d785a63d995d162d8fc05c15e19716d615",
+    "supermimic/assets/policies/backpack_retrain/policy.onnx": "824726d539707e6942942245c104f110b5c8a2be04e0db78fc5e5bf13dc80948"
   },
   "required_directories": [
     "supermimic/assets/motions",
     "supermimic/assets/policies/baseline",
-    "supermimic/assets/policies/backpack"
+    "supermimic/assets/policies/backpack",
+    "supermimic/assets/policies/backpack_retrain"
   ],
   "bundle_paths": [
     "supermimic/assets/motions",
     "supermimic/assets/policies/baseline/policy.onnx",
-    "supermimic/assets/policies/backpack/policy.onnx"
+    "supermimic/assets/policies/backpack/policy.onnx",
+    "supermimic/assets/policies/backpack_retrain/policy.onnx"
   ]
 }

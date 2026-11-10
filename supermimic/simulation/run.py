@@ -14,9 +14,10 @@ p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source-session',type=Path,required=True)
 p.add_argument('--name',required=True)
 p.add_argument('--batch')
-p.add_argument('--policy',choices=('baseline','backpack'))
+p.add_argument('--policy',choices=('baseline','backpack','backpack_retrain'))
 p.add_argument('--stand-gains',choices=['original','policy','official'],default='policy')
 p.add_argument('--seconds',type=float)
+p.add_argument('--record-video',action='store_true',help='save policy-motion video after simulation')
 p.add_argument('--orientation-fault-at',type=float)
 p.add_argument('--imu-convention',choices=['previous_sdk','deployment'],default='deployment')
 a=p.parse_args()
@@ -25,7 +26,7 @@ if a.batch and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*',a.batch): p.error(
 src=a.source_session.resolve()
 cfg=json.loads((src/'candidate.json').read_text()); prep=json.loads((src/'preparation.json').read_text())
 policy=prep.get('policy')
-if policy not in ('baseline','backpack') or (a.policy and a.policy!=policy): p.error('source session policy mismatch')
+if policy not in ('baseline','backpack','backpack_retrain') or (a.policy and a.policy!=policy): p.error('source session policy mismatch')
 policy_dir=ROOT/'assets/policies'/policy
 controller_root=BUNDLE/'rl_lab_controller/g1_29dof_deployment'
 def resolved_asset(value):
@@ -62,11 +63,12 @@ controller=BUNDLE/'rl_lab_controller/g1_29dof_deployment/build_simulation/g1_ctr
 bridge=BASE/'bridge.py'
 args=[sys.executable,'-u',str(bridge),'--model',str(model),'--controller',str(controller),'--initial-pose',str(out/'reference.json'),'--config',str(out/'candidate.json'),'--no-stand-button','--stand-time',str(math.ceil(prep['stand_duration_seconds']+4)),'--expect-policy-window-stop','--policy-standby-flow','--output',str(out/'simulation'),'--grounded-start','--root-height',str(height),'--release-duration','10','--zero-time','20','--post-forward-hold','20']
 args+=extra+["--imu-convention",a.imu_convention]
+if a.record_video: args+=['--record-video']
 if a.orientation_fault_at is not None:
  if not math.isfinite(a.orientation_fault_at) or a.orientation_fault_at<=0:p.error('invalid orientation fault time')
  args+=['--orientation-fault-at',str(a.orientation_fault_at)]
 env=shared_runtime_env()
-manifest={'protection_profile':'reference_gravity_distance_0p8','physical_robot_test':False,'source_session':str(src),'stand_gains':a.stand_gains,'policy':policy,'model_variant':'hands_backpack','imu_convention':a.imu_convention,'motion_seconds':vel['max_seconds'],'argv':args,'sha256':{str(x.relative_to(BUNDLE)):hashlib.sha256(x.read_bytes()).hexdigest() for x in [bridge,controller,model,BUNDLE/'simulation_core/physics.py',ROOT/'tools/model.py',BASE/'physics.json',BASE/'official_fixstand_gains.json',BUNDLE/'scripts/runtime_env.py',policy_dir/'policy.onnx',policy_dir/'policy_meta.json',out/'candidate.json',out/'motion.bin']}}
+manifest={'protection_profile':'reference_gravity_distance_0p8','physical_robot_test':False,'source_session':str(src),'stand_gains':a.stand_gains,'policy':policy,'model_variant':'hands_backpack','imu_convention':a.imu_convention,'motion_seconds':vel['max_seconds'],'record_video':a.record_video,'argv':args,'sha256':{str(x.relative_to(BUNDLE)):hashlib.sha256(x.read_bytes()).hexdigest() for x in [bridge,BASE/'render_video.py',controller,model,BUNDLE/'simulation_core/physics.py',ROOT/'tools/model.py',BASE/'physics.json',BASE/'official_fixstand_gains.json',BUNDLE/'scripts/runtime_env.py',policy_dir/'policy.onnx',policy_dir/'policy_meta.json',out/'candidate.json',out/'motion.bin']}}
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2))
 shutil.copy2(bridge,out/'bridge_snapshot.py')
 shutil.copy2(Path(__file__),out/'runner_snapshot.py')
@@ -85,5 +87,16 @@ with (out/'logs/run.log').open('x') as log:
    except ProcessLookupError:pass
    proc.wait()
   raise
-print(json.dumps({'run':str(out),'exit_code':code}),flush=True)
+video_status=None
+if a.record_video and not a.batch:
+ trace=out/'simulation/video_states.npz'
+ if trace.exists():
+  with (out/'logs/video.log').open('x') as log:
+   rendered=subprocess.run([sys.executable,str(BASE/'render_video.py'),'--run',str(out)],
+                           env=env,cwd=ROOT,stdout=log,stderr=subprocess.STDOUT)
+  video_status='saved' if rendered.returncode==0 and (out/'simulation/video.mp4').exists() else 'failed'
+ else:
+  video_status='unavailable'
+ (out/'video_status.json').write_text(json.dumps({'status':video_status,'video':str(out/'simulation/video.mp4') if video_status=='saved' else None},indent=2)+'\n')
+print(json.dumps({'run':str(out),'exit_code':code,'video_status':video_status}),flush=True)
 sys.exit(code)

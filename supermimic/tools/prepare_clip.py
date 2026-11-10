@@ -76,7 +76,7 @@ def candidate_frames(clip, lo: np.ndarray, hi: np.ndarray, search_seconds: float
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--clip", required=True)
-    p.add_argument("--policy", choices=("baseline", "backpack"), required=True)
+    p.add_argument("--policy", choices=("baseline", "backpack", "backpack_retrain"), required=True)
     p.add_argument("--start-seconds", type=float, default=0.0)
     p.add_argument("--max-seconds", type=float, default=5.0)
     p.add_argument("--full-clip-simulation", action="store_true", help="entire clip, isolated simulation only")

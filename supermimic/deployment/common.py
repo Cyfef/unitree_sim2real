@@ -7,7 +7,7 @@ import importlib.metadata
 A = Path(__file__).resolve().parent
 ROOT = A.parent
 BUNDLE = ROOT.parent
-POLICIES = {name: ROOT / 'assets/policies' / name for name in ('baseline', 'backpack')}
+POLICIES = {name: ROOT / 'assets/policies' / name for name in ('baseline', 'backpack', 'backpack_retrain')}
 PROFILE = 'loaded_posture_v5'
 CONTROLLER = BUNDLE / 'rl_lab_controller/g1_29dof_deployment/build/g1_ctrl'
 BRIDGE = A / 'bridge.py'
